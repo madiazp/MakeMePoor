@@ -10,6 +10,9 @@ import (
 )
 
 type BBData struct {
+	High    float64
+	Low     float64
+	Mid     float64
 	Price   float64
 	Central float64
 	Upper   float64
@@ -30,6 +33,9 @@ func BBand(cdls []*bfx.Candle, span int) (bband []BBData) {
 
 			avg, std = stat.MeanStdDev(data[i-span:i], nil)
 			bband = append(bband, BBData{
+				High:    cdl.High,
+				Low:     cdl.Low,
+				Mid:     cdl.Low + (cdl.High-cdl.Low)/2,
 				Price:   data[i],
 				Central: avg,
 				Upper:   avg + 2*std,

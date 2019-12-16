@@ -10,29 +10,26 @@ import (
 func Simulate(funds float64, freq, span int) {
 
 	ccbtc := CoinChannel{
-		Symbol:    bfx.TradingPrefix + bfx.BTCUSD,
-		TimeFrame: bfx.FifteenMinutes,
-		Freq:      freq,
-		Span:      span,
+		Symbol: bfx.TradingPrefix + bfx.BTCUSD,
+		Freq:   freq,
+		Span:   span,
 	}
 	cceth := CoinChannel{
-		Symbol:    bfx.TradingPrefix + bfx.ETHUSD,
-		TimeFrame: bfx.FifteenMinutes,
-		Freq:      freq,
-		Span:      span,
+		Symbol: bfx.TradingPrefix + bfx.ETHUSD,
+		Freq:   freq,
+		Span:   span,
 	}
 	ccxrp := CoinChannel{
-		Symbol:    bfx.TradingPrefix + bfx.XRPUSD,
-		TimeFrame: bfx.FifteenMinutes,
-		Freq:      freq,
-		Span:      span,
+		Symbol: bfx.TradingPrefix + bfx.XRPUSD,
+		Freq:   freq,
+		Span:   span,
 	}
 	ccbtc.SetFunds(funds)
 	cceth.SetFunds(funds)
 	ccxrp.SetFunds(funds)
-	go ccbtc.Start()
-	go cceth.Start()
-	go ccxrp.Start()
+	go ccbtc.Start15M()
+	go cceth.Start15M()
+	go ccxrp.Start15M()
 	for {
 		if ccbtc.Fail != nil {
 			log.Fatal(ccbtc.Fail)
