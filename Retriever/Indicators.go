@@ -9,25 +9,37 @@ import (
 	"gonum.org/v1/plot/vg"
 )
 
+type BBData struct {
+	Price   float64
+	Central float64
+	Upper   float64
+	Down    float64
+	T       float64
+}
+
 // Bollinger Band.
-func BBand(cdls []*bfx.Candle, span int) (central, upper, down, data, t []float64) {
+func BBand(cdls []*bfx.Candle, span int) (bband []BBData) {
 
 	var avg, std float64
+	var data []float64
 
 	for i, cdl := range cdls {
 		data = append(data, cdl.Close)
-		t = append(t, float64(cdl.MTS))
-		// se espera a que se tenag suficientes datos
+		// wait for enought data
 		if i > span {
 
 			avg, std = stat.MeanStdDev(data[i-span:i], nil)
-			central = append(central, avg)
-			upper = append(upper, avg+2.5*std)
-			down = append(down, avg-2.5*std)
+			bband = append(bband, BBData{
+				Price:   data[i],
+				Central: avg,
+				Upper:   avg + 2*std,
+				Down:    avg - 2*std,
+				T:       float64(cdl.MTS),
+			})
 
 		}
 	}
-	return central, upper, down, data, t
+	return bband
 
 }
 
@@ -35,14 +47,14 @@ func BBand(cdls []*bfx.Candle, span int) (central, upper, down, data, t []float6
 func RSI(cdls []*bfx.Candle, span int) (rsi, t []float64) {
 	// primer cierre
 	close := cdls[0].Close
-	// smmas evaluados al primer valor (para que no haya div 0)
+	// smmas evaluated with the first candle (to avoid div 0)
 	smd := close
 	smu := smd
 	var actuald, actualu float64
 
 	for _, cdl := range cdls[1:] {
 		t = append(t, float64(cdl.MTS))
-		// calculo de Gain y Loss
+		// Gain & Loss
 		if close > cdl.Close {
 			//Loss
 			actuald = close - cdl.Close
@@ -53,7 +65,7 @@ func RSI(cdls []*bfx.Candle, span int) (rsi, t []float64) {
 			actualu = cdl.Close - close
 
 		}
-		// calculos de los smma
+		// upper and down smma
 		smd = smma(smd, actuald, span)
 		smu = smma(smu, actualu, span)
 		// rsi
@@ -77,7 +89,7 @@ func MACD(cdls []*bfx.Candle, span int) (macdHist, t []float64) {
 		macd = lema - fema
 		signal = ema(macd, signal, 9)
 
-		macdHist = append(macdHist, macd-signal) //MACD Histograma
+		macdHist = append(macdHist, macd-signal) //MACD Histogram
 
 	}
 	return macdHist, t
@@ -132,7 +144,7 @@ func RSIPlotter(rsi, t []float64) {
 
 }
 
-func BandPlotter(central, upper, down, price, t []float64, span int) {
+func BandPlotter(bband []BBData) {
 
 	p, err := plot.New()
 	if err != nil {
@@ -142,12 +154,13 @@ func BandPlotter(central, upper, down, price, t []float64, span int) {
 	p.Title.Text = "Plotutil example"
 	p.X.Label.Text = "X"
 	p.Y.Label.Text = "Y"
+	price, central, down, upper := bbandtopoint(bband)
 
 	err = plotutil.AddLines(p,
-		"down", floattopoint(down, t),
-		"central", floattopoint(central, t),
-		"upper", floattopoint(upper, t),
-		"price", floattopoint(price[span:], t),
+		"down", down,
+		"central", central,
+		"upper", upper,
+		"price", price,
 	)
 	if err != nil {
 		panic(err)
@@ -183,6 +196,28 @@ func floattopoint(point, t []float64) plotter.XYs {
 
 	}
 	return pts
+}
+
+func bbandtopoint(bband []BBData) (price, central, down, upper plotter.XYs) {
+	price = make(plotter.XYs, len(bband))
+	central = make(plotter.XYs, len(bband))
+	down = make(plotter.XYs, len(bband))
+	upper = make(plotter.XYs, len(bband))
+	for i, bbd := range bband {
+
+		price[i].X = bbd.T
+		price[i].Y = bbd.Price
+
+		central[i].X = bbd.T
+		central[i].Y = bbd.Central
+
+		down[i].X = bbd.T
+		down[i].Y = bbd.Down
+
+		upper[i].X = bbd.T
+		upper[i].Y = bbd.Upper
+	}
+	return price, central, down, upper
 }
 
 func consttopoint(con float64, t []float64) plotter.XYs {
