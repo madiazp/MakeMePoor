@@ -35,7 +35,6 @@ func (ch *CoinChannel) Start15M() {
 			spike := ch.isSpike()
 			target := ch.searchTarget(spike)
 			ch.sendOrder(target)
-			ch.status = 2
 		// wait for the price to reach the target and then reset
 		case 2:
 			ch.Freq = savedfreq

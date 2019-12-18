@@ -80,10 +80,24 @@ func (ch *CoinChannel) sendOrder(t Target) {
 	var tp string
 	if t.Type == 1 {
 		tp = "Short"
+		if FEES >= t.Start/t.Out {
+			ch.status = 0
+			ch.target = Target{}
+			log.Printf(aura.Sprintf(aura.Green("ROI muy bajo!, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
+			return
+		}
 	} else {
 		tp = "Long"
+		if FEES >= t.Out/t.Start {
+			ch.status = 0
+			ch.target = Target{}
+			log.Printf(aura.Sprintf(aura.Green("ROI muy bajo!, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
+			return
+		}
 	}
 	ch.target = t
+	ch.status = 2
+
 	log.Printf(aura.Sprintf(aura.Green("Orden simulada, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
 
 }
@@ -111,11 +125,11 @@ func (ch *CoinChannel) scanTrend() {
 	// if the price is trending look for the price to touch the ema5 again to end it.
 	if ch.trend != 0 {
 		if ch.trend == 1 && lastPrice >= lastEma50 {
-			log.Printf(aura.Sprintf(aura.BrightCyan(" down trend is over, price: %f, ema: %f, Symbol: %f ! \n"), lastPrice, lastEma50, ch.Symbol))
+			log.Printf(aura.Sprintf(aura.BrightCyan(" down trend is over, price: %f, ema: %f, Symbol: %s ! \n"), lastPrice, lastEma50, ch.Symbol))
 			ch.trend = 0
 			ch.status = 0
 		} else if ch.trend == 2 && lastEma50 >= lastPrice {
-			log.Printf(aura.Sprintf(aura.BrightCyan(" up trend is over, price: %f, ema: %f, Symbol: %f ! \n"), lastPrice, lastEma50, ch.Symbol))
+			log.Printf(aura.Sprintf(aura.BrightCyan(" up trend is over, price: %f, ema: %f, Symbol: %s ! \n"), lastPrice, lastEma50, ch.Symbol))
 			ch.trend = 0
 			ch.status = 0
 
