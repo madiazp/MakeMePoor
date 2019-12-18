@@ -10,27 +10,29 @@ import (
 	aura "github.com/logrusorgru/aurora"
 )
 
+// CoinChannel is the main struct, it hold the inner state of a coin
 type CoinChannel struct {
-	Symbol  string
-	Freq    int
-	Span    int
-	Fail    error
-	candles []*bfx.Candle
-	status  uint
-	target  Target
-	funds   float64
+	Symbol  string        // the symbol of the coin
+	Freq    int           // the recuency of the scan
+	Span    int           // the rate of the bollinger bands, typically 20
+	Fail    error         // inner state of error, logged when simulated
+	candles []*bfx.Candle // candles
+	status  uint          // state of the control state machine
+	trend   uint          // trend indicator, o if tunneling, 1 for down-trend, 2 to up-trend
+	target  Target        // price action
+	funds   float64       // total fund
 }
 
+// order state
 type Target struct {
-	Start float64
-	Out   float64
-	Type  uint
-	MTS   float64
+	Start  float64 // the start price of the position
+	Out    float64 // the target price
+	Type   uint    // 1 for short, 2 for long
+	MTS    float64 // MTS of the start
+	Active bool    //if the order start and is waiting for the end.
 }
-type EmaData struct {
-	Ema float64
-	MTS float64
-}
+
+// order struct to API, unused in simulation
 type OrderData struct {
 	Type   uint
 	Price  float64
@@ -42,9 +44,10 @@ func (ch *CoinChannel) SetFunds(f float64) {
 	ch.funds = f
 }
 
+// scan the candles
 func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
+
 	client := rest.NewClient()
-	//candles, err := client.Candles.History(bfx.TradingPrefix+bfx.BTCUSD, bfx.FifteenMinutes)
 	now := time.Now()
 	millis := now.UnixNano() / 1000000
 
@@ -66,12 +69,13 @@ func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
 
 		return err
 	}
-
 	ch.candles = candles.Snapshot
+	ch.scanTrend()
 	return nil
 
 }
 
+// start an order
 func (ch *CoinChannel) sendOrder(t Target) {
 	var tp string
 	if t.Type == 1 {
@@ -80,7 +84,6 @@ func (ch *CoinChannel) sendOrder(t Target) {
 		tp = "Long"
 	}
 	ch.target = t
-	//log.Printf("Orden simulada, Tipo: %s, Entrada: %f, Target: %f ", tp, t.Start, t.Out)
 	log.Printf(aura.Sprintf(aura.Green("Orden simulada, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
 
 }
@@ -93,6 +96,37 @@ func (ch *CoinChannel) bbandDelta() float64 {
 	delta := (diff1 - diff2) / 2
 
 	return delta
+}
+
+// watch out for trending
+func (ch *CoinChannel) scanTrend() {
+
+	ema50 := ch.getEMA(50)
+	ema10 := ch.getEMA(10)
+	lastEma50 := ema50[len(ema50)-1]
+	lastEma10 := ema10[len(ema10)-1]
+	lastPrice := ch.candles[len(ch.candles)-1].Close
+	// if the price is trending look for the price to touch the ema5 again to end it.
+	if ch.trend != 0 {
+		if ch.trend == 1 && lastPrice >= lastEma50 {
+			log.Printf(aura.Sprintf(aura.BrightCyan(" down trend is over, price: %f, ema: %f, Symbol: %f ! \n"), lastPrice, lastEma50, ch.Symbol))
+			ch.trend = 0
+			ch.status = 0
+		} else if ch.trend == 2 && lastEma50 >= lastPrice {
+			log.Printf(aura.Sprintf(aura.BrightCyan(" up trend is over, price: %f, ema: %f, Symbol: %f ! \n"), lastPrice, lastEma50, ch.Symbol))
+			ch.trend = 0
+			ch.status = 0
+
+		}
+		// use the ema50/ema10 ratio , if the ratio is more or less than the trigger ratio then the trend is delcared
+	} else if lastEma50/lastEma10 >= TRENDTRIGGER && ch.trend != 1 {
+		log.Printf(aura.Sprintf(aura.BrightCyan(" down trend start, rate: %f, symbol: %s ! \n"), lastEma50/lastEma10, ch.Symbol))
+		ch.trend = 1
+
+	} else if lastEma10/lastEma50 >= TRENDTRIGGER && ch.trend != 2 {
+		log.Printf(aura.Sprintf(aura.BrightCyan(" up trend start, rate: %f !. symbol: %s \n"), lastEma10/lastEma50, ch.Symbol))
+		ch.trend = 2
+	}
 }
 
 func (ch *CoinChannel) getMACD() (macd, t []float64) {
@@ -110,18 +144,18 @@ func (ch *CoinChannel) getBBand() (bband []rt.BBData) {
 
 }
 
-func (ch *CoinChannel) getEMA50() (ema50 []EmaData) {
+// get the ema of k periods of the candles
+func (ch *CoinChannel) getEMA(k float64) (ema50 []float64) {
+	ema50 = append(ema50, ch.candles[0].Close)
 	for i, cdls := range ch.candles {
-		if i != 0 {
-			ema50 = append(ema50, EmaData{
-				Ema: ema(cdls.Close, ema50[i-1].Ema, 20),
-				MTS: float64(cdls.MTS),
-			})
+		if i > 0 {
+			ema50 = append(ema50, ema(cdls.Close, ema50[i-1], k))
 		}
 	}
 	return ema50
 }
 
+// exponential mov avarage
 func ema(x, em, k float64) float64 {
 	k = 2 / (k + 1)
 	return x*k + (1-k)*em
