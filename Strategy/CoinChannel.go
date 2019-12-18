@@ -106,6 +106,8 @@ func (ch *CoinChannel) scanTrend() {
 	lastEma50 := ema50[len(ema50)-1]
 	lastEma10 := ema10[len(ema10)-1]
 	lastPrice := ch.candles[len(ch.candles)-1].Close
+	lastHigh := ch.candles[len(ch.candles)-1].High
+	lastLow := ch.candles[len(ch.candles)-1].Low
 	// if the price is trending look for the price to touch the ema5 again to end it.
 	if ch.trend != 0 {
 		if ch.trend == 1 && lastPrice >= lastEma50 {
@@ -118,12 +120,12 @@ func (ch *CoinChannel) scanTrend() {
 			ch.status = 0
 
 		}
-		// use the ema50/ema10 ratio , if the ratio is more or less than the trigger ratio then the trend is delcared
-	} else if lastEma50/lastEma10 >= TRENDTRIGGER && ch.trend != 1 {
+		// use the ema50/ema10 ratio , if the ratio is more or less than the trigger ratio and the price is over/below the ema50 then the trend is delcared
+	} else if lastEma50/lastEma10 >= TRENDTRIGGER && ch.trend != 1 && lastEma50 >= lastHigh {
 		log.Printf(aura.Sprintf(aura.BrightCyan(" down trend start, rate: %f, symbol: %s ! \n"), lastEma50/lastEma10, ch.Symbol))
 		ch.trend = 1
 
-	} else if lastEma10/lastEma50 >= TRENDTRIGGER && ch.trend != 2 {
+	} else if lastEma10/lastEma50 >= TRENDTRIGGER && ch.trend != 2 && lastLow >= lastEma50 {
 		log.Printf(aura.Sprintf(aura.BrightCyan(" up trend start, rate: %f !. symbol: %s \n"), lastEma10/lastEma50, ch.Symbol))
 		ch.trend = 2
 	}
