@@ -65,7 +65,6 @@ func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
 		bfx.OldestFirst,
 	)
 	if err != nil {
-		log.Fatal(err.Error())
 
 		return err
 	}
@@ -98,7 +97,7 @@ func (ch *CoinChannel) sendOrder(t Target) {
 	ch.target = t
 	ch.status = 2
 
-	log.Printf(aura.Sprintf(aura.Green("Orden simulada, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
+	log.Printf(aura.Sprintf(aura.BgBrightRed("Orden simulada, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
 
 }
 
@@ -116,9 +115,9 @@ func (ch *CoinChannel) bbandDelta() float64 {
 func (ch *CoinChannel) scanTrend() {
 
 	ema50 := ch.getEMA(50)
-	ema10 := ch.getEMA(10)
+	ema20 := ch.getEMA(20)
 	lastEma50 := ema50[len(ema50)-1]
-	lastEma10 := ema10[len(ema10)-1]
+	lastEma20 := ema20[len(ema20)-1]
 	lastPrice := ch.candles[len(ch.candles)-1].Close
 	lastHigh := ch.candles[len(ch.candles)-1].High
 	lastLow := ch.candles[len(ch.candles)-1].Low
@@ -134,13 +133,13 @@ func (ch *CoinChannel) scanTrend() {
 			ch.status = 0
 
 		}
-		// use the ema50/ema10 ratio , if the ratio is more or less than the trigger ratio and the price is over/below the ema50 then the trend is delcared
-	} else if lastEma50/lastEma10 >= TRENDTRIGGER && ch.trend != 1 && lastEma50 >= lastHigh {
-		log.Printf(aura.Sprintf(aura.BrightCyan(" down trend start, rate: %f, symbol: %s ! \n"), lastEma50/lastEma10, ch.Symbol))
+		// use the ema50/ema20 ratio , if the ratio is more or less than the trigger ratio and the price is over/below the ema50 then the trend is delcared
+	} else if lastEma50/lastEma20 >= TRENDTRIGGER && ch.trend != 1 && lastEma50 >= lastHigh {
+		log.Printf(aura.Sprintf(aura.BrightCyan(" down trend start, rate: %f, ema20:%f, ema20:%f, symbol: %s ! \n"), lastEma50/lastEma20, lastEma20, lastEma50, ch.Symbol))
 		ch.trend = 1
 
-	} else if lastEma10/lastEma50 >= TRENDTRIGGER && ch.trend != 2 && lastLow >= lastEma50 {
-		log.Printf(aura.Sprintf(aura.BrightCyan(" up trend start, rate: %f !. symbol: %s \n"), lastEma10/lastEma50, ch.Symbol))
+	} else if lastEma20/lastEma50 >= TRENDTRIGGER && ch.trend != 2 && lastLow >= lastEma50 {
+		log.Printf(aura.Sprintf(aura.BrightCyan(" up trend start, rate: %f , ema20: %f, ema50:%f, symbol: %s \n"), lastEma20/lastEma50, lastEma20, lastEma50, ch.Symbol))
 		ch.trend = 2
 	}
 }

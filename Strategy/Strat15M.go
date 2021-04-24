@@ -12,6 +12,8 @@ import (
 func (ch *CoinChannel) Start15M() {
 	log.Println("Comienza el scan")
 	savedfreq := ch.Freq // hold the freq
+	detect := false
+	var spike uint
 	for {
 		err := ch.scan(bfx.FifteenMinutes) // use 15 min candles
 		if err != nil {
@@ -25,14 +27,14 @@ func (ch *CoinChannel) Start15M() {
 		switch ch.status {
 		// first state, look up for spike out of the bollinger bands
 		case 0:
-
-			if ch.isSpike() != 0 {
+			spike, detect = ch.isSpike(detect)
+			if spike != 0 {
 				ch.status = 1
 				ch.Freq = 30
 			}
 		// if a spike is found then make an order and hold a position
 		case 1:
-			spike := ch.isSpike()
+			spike, detect = ch.isSpike(detect)
 			target := ch.searchTarget(spike)
 			ch.sendOrder(target)
 		// wait for the price to reach the target and then reset
@@ -56,7 +58,7 @@ func (ch *CoinChannel) Start15M() {
 }
 
 // search if there is a spike in the price above(or below) a factor (the trigger) of the bollinger band
-func (ch *CoinChannel) isSpike() (spike uint) {
+func (ch *CoinChannel) isSpike(detectin bool) (spike uint, detect bool) {
 	bbands := ch.getBBand()
 	bband := bbands[len(bbands)-1]
 	pastband := bbands[len(bbands)-2]
@@ -67,8 +69,12 @@ func (ch *CoinChannel) isSpike() (spike uint) {
 	pover := pastband.High / pastband.Upper
 	pbelow := pastband.Down / pastband.Low
 	// log when teh price is off band
+	detect = false
 	if over > 1 || below > 1 {
-		log.Printf(aura.Sprintf("Off band! p: %f, d: %f, u:%f, diff :%f , p/u : %f, d/p: %f \n", bband.Price, bband.Down, bband.Upper, aura.Blue(ch.bbandDelta()), aura.Colorize(over, aura.RedBg), aura.Colorize(below, aura.GreenBg)))
+		if !detectin {
+			log.Printf(aura.Sprintf("Off band! p: %f, d: %f, u:%f, diff :%f , p/u : %f, d/p: %f \n", bband.Price, bband.Down, bband.Upper, aura.Blue(ch.bbandDelta()), aura.Colorize(over, aura.RedBg), aura.Colorize(below, aura.GreenBg)))
+		}
+		detect = true
 	}
 
 	if over > TRIGGER || over+pover > SECONDTRIGGER {
@@ -78,7 +84,7 @@ func (ch *CoinChannel) isSpike() (spike uint) {
 		}
 		log.Printf("Spike! price: %f , bband: %f , short it! \n", bband.Price, bband.Upper)
 
-		return spike
+		return spike, detect
 
 	} else if below > TRIGGER || below+pbelow > SECONDTRIGGER {
 		spike = 3
@@ -86,10 +92,10 @@ func (ch *CoinChannel) isSpike() (spike uint) {
 			spike = 4
 		}
 		log.Printf("Spike! price: %f , bband: %f , long it! \n", bband.Price, bband.Down)
-		return spike
+		return spike, detect
 	}
 	//log.Printf("No spike: p: %f, d: %f, u: %f \n", bband.Price, bband.Down, bband.Upper)
-	return 0
+	return 0, detect
 
 }
 
@@ -117,10 +123,11 @@ func (ch *CoinChannel) searchTarget(spike uint) Target {
 	}
 
 	return Target{
-		Start: ch.candles[len(ch.candles)-1].Close,
-		Out:   out,
-		Type:  otype,
-		MTS:   float64(ch.candles[len(ch.candles)-1].MTS),
+		Start:  ch.candles[len(ch.candles)-1].Close,
+		Out:    out,
+		Type:   otype,
+		MTS:    float64(ch.candles[len(ch.candles)-1].MTS),
+		Active: true,
 	}
 
 }
@@ -135,14 +142,14 @@ func (ch *CoinChannel) waitClose() bool {
 		if ch.target.Out >= last {
 			profit = ch.target.Start * 0.998 / last
 			ch.funds = ch.funds * profit
-			log.Printf("Orden Short cerrada, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
+			log.Printf(aura.Sprintf(aura.BgBrightGreen("Orden Short cerrada, start: %f, out: %f, profit: %f , acum: %f "), ch.target.Start, last, profit, ch.funds))
 			ch.target = Target{}
 			return true
 			// reach the stop loss or cross 3 times the ema50
 		} else if last/ch.target.Start >= STOP || ch.eMAStop() {
 			profit = ch.target.Start * 0.998 / last
 			ch.funds = ch.funds * profit
-			log.Printf("Orden Short liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
+			log.Printf(aura.Sprintf(aura.BgBrightRed("Orden Short liquidada!!, start: %f, out: %f, profit: %f , acum: %f "), ch.target.Start, last, profit, ch.funds))
 			ch.target = Target{}
 			return true
 
@@ -153,7 +160,7 @@ func (ch *CoinChannel) waitClose() bool {
 		if last >= ch.target.Out {
 			profit = last / ch.target.Start * 0.998
 			ch.funds = ch.funds * profit
-			log.Printf("Orden Long cerrada, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
+			log.Printf(aura.Sprintf(aura.BgBrightGreen("Orden Long cerrada, start: %f, out: %f, profit: %f , acum: %f "), ch.target.Start, last, profit, ch.funds))
 			ch.target = Target{}
 			return true
 			// reach the stop loss or cross 3 times the ema50
@@ -161,7 +168,7 @@ func (ch *CoinChannel) waitClose() bool {
 			profit = last / ch.target.Start * 0.998
 			ch.funds = ch.funds * profit
 
-			log.Printf(aura.Sprintf(aura.Colorize("Orden Long liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", aura.BrightBg), ch.target.Start, last, profit, ch.funds))
+			log.Printf(aura.Sprintf(aura.BgBrightRed("Orden Long liquidada!!, start: %f, out: %f, profit: %f , acum: %f "), ch.target.Start, last, profit, ch.funds))
 			ch.target = Target{}
 			return true
 
@@ -175,11 +182,10 @@ func (ch *CoinChannel) liquidateOrders() {
 	last := ch.candles[len(ch.candles)-1].Close
 	profit := ch.target.Start * 0.998 / last
 
-	if ch.target.Type == 1 {
-		ch.funds = ch.funds * profit
-	} else if profit != 0 {
-		ch.funds = ch.funds / profit
+	if ch.target.Type == 2 {
+		profit = 1 / profit
 	}
+	ch.funds = ch.funds * profit
 	log.Printf(aura.Sprintf(aura.Colorize("Orden liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", aura.BrightBg), ch.target.Start, last, profit, ch.funds))
 	ch.target = Target{}
 

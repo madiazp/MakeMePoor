@@ -10,6 +10,8 @@ import (
 func (ch *CoinChannel) Start1H() {
 	log.Println("Comienza el scan")
 	savedfreq := ch.Freq
+	var detect bool
+	var spike uint
 	for {
 		err := ch.scan(bfx.FifteenMinutes)
 		if err != nil {
@@ -19,12 +21,12 @@ func (ch *CoinChannel) Start1H() {
 		switch ch.status {
 		case 0:
 
-			if ch.isSpike() != 0 {
+			if spike, detect = ch.isSpike(detect); spike != 0 {
 				ch.status = 1
 				ch.Freq = 30
 			}
 		case 1:
-			spike := ch.isSpike()
+			spike, detect = ch.isSpike(detect)
 			target := ch.searchTarget(spike)
 			ch.sendOrder(target)
 			ch.status = 2
