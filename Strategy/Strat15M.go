@@ -10,6 +10,9 @@ import (
 
 // main state machine of the strategy
 func (ch *CoinChannel) Start15M() {
+    if !ch.params.IsInit {
+        ch.params.Init()
+    }
 	log.Println("Comienza el scan")
 	savedfreq := ch.Freq // hold the freq
 	detect := false
@@ -77,18 +80,18 @@ func (ch *CoinChannel) isSpike(detectin bool) (spike uint, detect bool) {
 		detect = true
 	}
 
-	if over > TRIGGER || over+pover > SECONDTRIGGER {
+	if over > ch.params.Trigger || over+pover > ch.params.SecondTrigger {
 		spike = 1
-		if over+pover > SECONDTRIGGER {
+		if over+pover > ch.params.SecondTrigger {
 			spike = 2
 		}
 		log.Printf("Spike! price: %f , bband: %f , short it! \n", bband.Price, bband.Upper)
 
 		return spike, detect
 
-	} else if below > TRIGGER || below+pbelow > SECONDTRIGGER {
+	} else if below > ch.params.Trigger || below+pbelow > ch.params.SecondTrigger {
 		spike = 3
-		if below+pbelow > SECONDTRIGGER {
+		if below+pbelow > ch.params.SecondTrigger{
 			spike = 4
 		}
 		log.Printf("Spike! price: %f , bband: %f , long it! \n", bband.Price, bband.Down)
@@ -146,7 +149,7 @@ func (ch *CoinChannel) waitClose() bool {
 			ch.target = Target{}
 			return true
 			// reach the stop loss or cross 3 times the ema50
-		} else if last/ch.target.Start >= STOP || ch.eMAStop() {
+		} else if last/ch.target.Start >= ch.params.Stop || ch.eMAStop() {
 			profit = ch.target.Start * 0.998 / last
 			ch.funds = ch.funds * profit
 			log.Printf(aura.Sprintf(aura.BgBrightRed("Orden Short liquidada!!, start: %f, out: %f, profit: %f , acum: %f "), ch.target.Start, last, profit, ch.funds))
@@ -164,7 +167,7 @@ func (ch *CoinChannel) waitClose() bool {
 			ch.target = Target{}
 			return true
 			// reach the stop loss or cross 3 times the ema50
-		} else if ch.target.Start/last >= STOP || ch.eMAStop() {
+		} else if ch.target.Start/last >= ch.params.Stop || ch.eMAStop() {
 			profit = last / ch.target.Start * 0.998
 			ch.funds = ch.funds * profit
 
