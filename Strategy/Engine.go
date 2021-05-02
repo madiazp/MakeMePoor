@@ -1,28 +1,28 @@
 package Strategy
 
 import (
+	bitfinexCommon "github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
+	"github.com/bitfinexcom/bitfinex-api-go/v1"
 	"log"
 	"time"
-
-	bfx "github.com/bitfinexcom/bitfinex-api-go/v2"
 )
 
-// start a simulation without real money
+// Simulate starts a simulation without real money
 func Simulate(funds float64, freq, span int) {
 
 	// use 3 coin channels: btc(bitcoin), eth(ethereum), xrp(ripple)
 	ccbtc := CoinChannel{
-		Symbol: bfx.TradingPrefix + bfx.BTCUSD,
+		Symbol: bitfinexCommon.TradingPrefix + bitfinex.BTCUSD,
 		Freq:   freq,
 		Span:   span,
 	}
 	cceth := CoinChannel{
-		Symbol: bfx.TradingPrefix + bfx.ETHUSD,
+		Symbol: bitfinexCommon.TradingPrefix + bitfinex.ETHUSD,
 		Freq:   freq,
 		Span:   span,
 	}
 	ccxrp := CoinChannel{
-		Symbol: bfx.TradingPrefix + bfx.XRPUSD,
+		Symbol: bitfinexCommon.TradingPrefix + bitfinex.XRPUSD,
 		Freq:   freq,
 		Span:   span,
 	}

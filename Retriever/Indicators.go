@@ -1,239 +1,113 @@
 package Retriever
 
 import (
-	bfx "github.com/bitfinexcom/bitfinex-api-go/v2"
-	"github.com/gonum/stat"
-	"gonum.org/v1/plot"
-	"gonum.org/v1/plot/plotter"
-	"gonum.org/v1/plot/plotutil"
-	"gonum.org/v1/plot/vg"
+	bitfinexCandle "github.com/bitfinexcom/bitfinex-api-go/pkg/models/candle"
+	"gonum.org/v1/gonum/stat"
 )
 
-type BBData struct {
-	High    float64
-	Low     float64
-	Mid     float64
-	Price   float64
-	Central float64
-	Upper   float64
-	Down    float64
-	T       float64
+type BollingerBandData struct {
+	High      float64
+	Low       float64
+	Mid       float64
+	Price     float64
+	Central   float64
+	Upper     float64
+	Lower     float64
+	Timestamp int64
 }
 
-// Bollinger Band.
-func BBand(cdls []*bfx.Candle, span int) (bband []BBData) {
-
-	var avg, std float64
+// BollingerBand computes bollinger band data struct from a set of candles
+// (see more on the wiki https://github.com/madiazp/MakeMePoor/wiki).
+// Apparently a set of candles is called a Snapshot, but bitfinex api docs are ass.
+// TODO: evaluate whether or not to use Snapshot instead of Slice
+func BollingerBand(candles []*bitfinexCandle.Candle, span int) (bollingerBand []BollingerBandData) {
+	var mean, std float64
 	var data []float64
 
-	for i, cdl := range cdls {
-		data = append(data, cdl.Close)
-		// wait for enought data
+	for i, candle := range candles {
+		data = append(data, candle.Close)
+		// wait for enough data
 		if i > span {
 
-			avg, std = stat.MeanStdDev(data[i-span:i], nil)
-			bband = append(bband, BBData{
-				High:    cdl.High,
-				Low:     cdl.Low,
-				Mid:     cdl.Low + (cdl.High-cdl.Low)/2,
-				Price:   data[i],
-				Central: avg,
-				Upper:   avg + 2*std,
-				Down:    avg - 2*std,
-				T:       float64(cdl.MTS),
+			mean, std = stat.MeanStdDev(data[i-span:i], nil)
+			bollingerBand = append(bollingerBand, BollingerBandData{
+				High:      candle.High,
+				Low:       candle.Low,
+				Mid:       (candle.High + candle.Low) / 2,
+				Price:     data[i],
+				Central:   mean,
+				Upper:     mean + 2*std,
+				Lower:     mean - 2*std,
+				Timestamp: candle.MTS,
 			})
 
 		}
 	}
-	return bband
-
+	return bollingerBand
 }
 
-// RSI
-func RSI(cdls []*bfx.Candle, span int) (rsi, t []float64) {
-	// primer cierre
-	close := cdls[0].Close
-	// smmas evaluated with the first candle (to avoid div 0)
-	smd := close
-	smu := smd
-	var actuald, actualu float64
+// RelativeStrengthIndex computes this indicator from a set of candles.
+// Entry not yet on the wiki.
+func RelativeStrengthIndex(candles []*bitfinexCandle.Candle, span int) (rsiValues []float64, timestamps []int64) {
+	// initialization
+	previousClose := candles[0].Close
+	// first smma evaluated with the first candle (to avoid div 0)
+	downwardSMMA := candles[0].Close
+	upwardSMMA := candles[0].Close
+	var downwardChange, upwardChange float64
 
-	for _, cdl := range cdls[1:] {
-		t = append(t, float64(cdl.MTS))
-		// Gain & Loss
-		if close > cdl.Close {
-			//Loss
-			actuald = close - cdl.Close
-			actualu = 0
+	for _, candle := range candles[1:] {
+		timestamps = append(timestamps, candle.MTS)
+
+		if previousClose > candle.Close {
+			// Loss
+			downwardChange = previousClose - candle.Close
+			upwardChange = 0
 		} else {
-			//Gain
-			actuald = 0
-			actualu = cdl.Close - close
+			// Gain
+			downwardChange = 0
+			upwardChange = candle.Close - previousClose
 
 		}
-		// upper and down smma
-		smd = smma(smd, actuald, span)
-		smu = smma(smu, actualu, span)
-		// rsi
-		rsi = append(rsi, 100-100/(1+smu/smd))
-		close = cdl.Close
 
+		downwardSMMA = smma(downwardSMMA, downwardChange, span)
+		upwardSMMA = smma(upwardSMMA, upwardChange, span)
+
+		rsiValues = append(rsiValues, 100-100/(1+upwardSMMA/downwardSMMA))
+		previousClose = candle.Close
 	}
-	return rsi, t
+	return rsiValues, timestamps
 }
 
-//MACD
-func MACD(cdls []*bfx.Candle, span int) (macdHist, t []float64) {
-	fema := cdls[0].Close
-	lema := fema
+// MovingAverageConvergenceDivergence computes this indicator from a set of candles.
+// Entry not yet on the wiki.
+func MovingAverageConvergenceDivergence(candles []*bitfinexCandle.Candle) (macdHistogram []float64,
+	timestamps []int64) {
+
+	longTermEMA := candles[0].Close
+	shortTermEMA := candles[0].Close
 	var signal, macd float64
 
-	for _, cdl := range cdls[1:] {
-		t = append(t, float64(cdl.MTS))
-		fema = ema(cdl.Close, fema, 26) //fast ema
-		lema = ema(cdl.Close, lema, 10) //longer ema
-		macd = lema - fema
+	for _, candle := range candles[1:] {
+		timestamps = append(timestamps, candle.MTS)
+
+		longTermEMA = ema(candle.Close, longTermEMA, 26)
+		shortTermEMA = ema(candle.Close, shortTermEMA, 12)
+		macd = shortTermEMA - longTermEMA
+
 		signal = ema(macd, signal, 9)
-
-		macdHist = append(macdHist, macd-signal) //MACD Histogram
-
+		macdHistogram = append(macdHistogram, macd-signal)
 	}
-	return macdHist, t
+	return macdHistogram, timestamps
 }
 
-func MACDPlotter(macd, t []float64) {
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
-
-	p.Title.Text = "RSI"
-	p.X.Label.Text = "X"
-	p.Y.Label.Text = "Y"
-
-	err = plotutil.AddLines(p,
-		"MACD", floattopoint(macd, t),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	// Save the plot to a PNG file.
-	if err := p.Save(15*vg.Inch, 15*vg.Inch, "macdpoints.png"); err != nil {
-		panic(err)
-	}
-}
-func RSIPlotter(rsi, t []float64) {
-
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
-
-	p.Title.Text = "RSI"
-	p.X.Label.Text = "X"
-	p.Y.Label.Text = "Y"
-
-	err = plotutil.AddLines(p,
-		"rsi", floattopoint(rsi, t),
-		"up", consttopoint(70, t),
-		"down", consttopoint(30, t),
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	// Save the plot to a PNG file.
-	if err := p.Save(15*vg.Inch, 15*vg.Inch, "rsipoints.png"); err != nil {
-		panic(err)
-	}
-
+// smma computes the smoothed moving average from the previous value and the upward/downward variation.
+func smma(previousSMMA, variation float64, periods int) float64 {
+	return (float64(periods-1)*previousSMMA + variation) / float64(periods)
 }
 
-func BandPlotter(bband []BBData) {
-
-	p, err := plot.New()
-	if err != nil {
-		panic(err)
-	}
-
-	p.Title.Text = "Plotutil example"
-	p.X.Label.Text = "X"
-	p.Y.Label.Text = "Y"
-	price, central, down, upper := bbandtopoint(bband)
-
-	err = plotutil.AddLines(p,
-		"down", down,
-		"central", central,
-		"upper", upper,
-		"price", price,
-	)
-	if err != nil {
-		panic(err)
-	}
-
-	// Save the plot to a PNG file.
-	if err := p.Save(15*vg.Inch, 15*vg.Inch, "points.png"); err != nil {
-		panic(err)
-	}
-
-}
-
-// smooth movil avarage
-func smma(sm, x float64, n int) float64 {
-	fn := float64(n)
-	return ((fn-1)*sm + x) / fn
-
-}
-
-// exponential moving avarage
-func ema(x, em, k float64) float64 {
-	k = 2 / (k + 1)
-	return x*k + (1-k)*em
-
-}
-
-func floattopoint(point, t []float64) plotter.XYs {
-	pts := make(plotter.XYs, len(point))
-	for i, _ := range pts {
-
-		pts[i].X = t[i] / 60000
-		pts[i].Y = point[i]
-
-	}
-	return pts
-}
-
-func bbandtopoint(bband []BBData) (price, central, down, upper plotter.XYs) {
-	price = make(plotter.XYs, len(bband))
-	central = make(plotter.XYs, len(bband))
-	down = make(plotter.XYs, len(bband))
-	upper = make(plotter.XYs, len(bband))
-	for i, bbd := range bband {
-
-		price[i].X = bbd.T
-		price[i].Y = bbd.Price
-
-		central[i].X = bbd.T
-		central[i].Y = bbd.Central
-
-		down[i].X = bbd.T
-		down[i].Y = bbd.Down
-
-		upper[i].X = bbd.T
-		upper[i].Y = bbd.Upper
-	}
-	return price, central, down, upper
-}
-
-func consttopoint(con float64, t []float64) plotter.XYs {
-	pts := make(plotter.XYs, len(t))
-	for i, _ := range pts {
-
-		pts[i].X = t[i] / 60000
-		pts[i].Y = con
-
-	}
-	return pts
-
+// ema computes the exponential moving average from the candle close and the previous value.
+func ema(closeValue, previousEMA float64, periods int) float64 {
+	alpha := 2 / float64(periods+1)
+	return alpha*closeValue + (1-alpha)*previousEMA
 }

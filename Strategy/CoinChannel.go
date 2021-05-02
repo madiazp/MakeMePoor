@@ -1,27 +1,27 @@
 package Strategy
 
 import (
+	bitfinexCandle "github.com/bitfinexcom/bitfinex-api-go/pkg/models/candle"
+	bitfinexCommon "github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
 	"log"
 	"time"
 
-	rt "../Retriever"
-	bfx "github.com/bitfinexcom/bitfinex-api-go/v2"
 	"github.com/bitfinexcom/bitfinex-api-go/v2/rest"
-	aura "github.com/logrusorgru/aurora"
+	rt "github.com/madiazp/MakeMePoor/Retriever"
 )
 
 // CoinChannel is the main struct, it hold the inner state of a coin
 type CoinChannel struct {
-	Symbol  string        // the symbol of the coin
-	Freq    int           // the recuency of the scan
-	Span    int           // the rate of the bollinger bands, typically 20
-	Fail    error         // inner state of error, logged when simulated
-	candles []*bfx.Candle // candles
-	status  uint          // state of the control state machine
-	trend   uint          // trend indicator, 0 if tunneling, 1 for down-trend, 2 to up-trend
-	target  Target        // price action
-	funds   float64       // total fund
-    params  Params        // triggers and options
+	Symbol  string                   // the symbol of the coin
+	Freq    int                      // the recuency of the scan
+	Span    int                      // the rate of the bollinger bands, typically 20
+	Fail    error                    // inner state of error, logged when simulated
+	candles []*bitfinexCandle.Candle // candles
+	status  uint                     // state of the control state machine
+	trend   uint                     // trend indicator, 0 if tunneling, 1 for down-trend, 2 to up-trend
+	target  Target                   // price action
+	funds   float64                  // total fund
+	params  Params                   // triggers and options
 }
 
 // order state
@@ -46,7 +46,7 @@ func (ch *CoinChannel) SetFunds(f float64) {
 }
 
 // scan the candles
-func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
+func (ch *CoinChannel) scan(TimeFrame bitfinexCommon.CandleResolution) error {
 
 	client := rest.NewClient()
 	now := time.Now()
@@ -54,8 +54,8 @@ func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
 
 	prior := now.Add(time.Duration(-24) * 1 * time.Hour)
 	millisStart := prior.UnixNano() / 1000000
-	start := bfx.Mts(millisStart)
-	end := bfx.Mts(millis)
+	start := bitfinexCommon.Mts(millisStart)
+	end := bitfinexCommon.Mts(millis)
 
 	candles, err := client.Candles.HistoryWithQuery(
 		ch.Symbol,
@@ -63,7 +63,7 @@ func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
 		start,
 		end,
 		1000,
-		bfx.OldestFirst,
+		bitfinexCommon.OldestFirst,
 	)
 	if err != nil {
 
@@ -77,16 +77,16 @@ func (ch *CoinChannel) scan(TimeFrame bfx.CandleResolution) error {
 
 // start an order
 func (ch *CoinChannel) sendOrder(t Target) {
-    if !ch.params.IsInit {
-        ch.params.Init()
-    }
+	if !ch.params.IsInit {
+		ch.params.Init()
+	}
 	var tp string
 	if t.Type == 1 {
 		tp = "Short"
 		if ch.params.Fees >= t.Start/t.Out {
 			ch.status = 0
 			ch.target = Target{}
-			log.Printf(aura.Sprintf(aura.Green("ROI muy bajo!, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
+			log.Printf("ROI muy bajo!, Tipo: %s, Entrada: %f, Target: %f ", tp, t.Start, t.Out)
 			return
 		}
 	} else {
@@ -94,22 +94,22 @@ func (ch *CoinChannel) sendOrder(t Target) {
 		if ch.params.Fees >= t.Out/t.Start {
 			ch.status = 0
 			ch.target = Target{}
-			log.Printf(aura.Sprintf(aura.Green("ROI muy bajo!, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
+			log.Printf("ROI muy bajo!, Tipo: %s, Entrada: %f, Target: %f ", tp, t.Start, t.Out)
 			return
 		}
 	}
 	ch.target = t
 	ch.status = 2
 
-	log.Printf(aura.Sprintf(aura.BgBrightRed("Orden simulada, Tipo: %s, Entrada: %f, Target: %f "), tp, t.Start, t.Out))
+	log.Printf("Orden simulada, Tipo: %s, Entrada: %f, Target: %f ", tp, t.Start, t.Out)
 
 }
 
 func (ch *CoinChannel) bbandDelta() float64 {
 	bbands := ch.getBBand()
 	i := len(bbands) - 1
-	diff1 := bbands[i].Upper - bbands[i].Down
-	diff2 := bbands[i-1].Upper - bbands[i-1].Down
+	diff1 := bbands[i].Upper - bbands[i].Lower
+	diff2 := bbands[i-1].Upper - bbands[i-1].Lower
 	delta := (diff1 - diff2) / 2
 
 	return delta
@@ -117,9 +117,9 @@ func (ch *CoinChannel) bbandDelta() float64 {
 
 // watch out for trending
 func (ch *CoinChannel) scanTrend() {
-    if !ch.params.IsInit {
-        ch.params.Init()
-    }
+	if !ch.params.IsInit {
+		ch.params.Init()
+	}
 	ema50 := ch.getEMA(50)
 	ema20 := ch.getEMA(20)
 	lastEma50 := ema50[len(ema50)-1]
@@ -130,38 +130,38 @@ func (ch *CoinChannel) scanTrend() {
 	// if the price is trending look for the price to touch the ema5 again to end it.
 	if ch.trend != 0 {
 		if ch.trend == 1 && lastPrice >= lastEma50 {
-			log.Printf(aura.Sprintf(aura.BrightCyan(" down trend is over, price: %f, ema: %f, Symbol: %s ! \n"), lastPrice, lastEma50, ch.Symbol))
+			log.Printf(" down trend is over, price: %f, ema: %f, Symbol: %s ! \n", lastPrice, lastEma50, ch.Symbol)
 			ch.trend = 0
 			ch.status = 0
 		} else if ch.trend == 2 && lastEma50 >= lastPrice {
-			log.Printf(aura.Sprintf(aura.BrightCyan(" up trend is over, price: %f, ema: %f, Symbol: %s ! \n"), lastPrice, lastEma50, ch.Symbol))
+			log.Printf(" up trend is over, price: %f, ema: %f, Symbol: %s ! \n", lastPrice, lastEma50, ch.Symbol)
 			ch.trend = 0
 			ch.status = 0
 
 		}
 		// use the ema50/ema20 ratio , if the ratio is more or less than the trigger ratio and the price is over/below the ema50 then the trend is delcared
 	} else if lastEma50/lastEma20 >= ch.params.TrendTrigger && ch.trend != 1 && lastEma50 >= lastHigh {
-		log.Printf(aura.Sprintf(aura.BrightCyan(" down trend start, rate: %f, ema20:%f, ema20:%f, symbol: %s ! \n"), lastEma50/lastEma20, lastEma20, lastEma50, ch.Symbol))
+		log.Printf(" down trend start, rate: %f, ema20:%f, ema20:%f, symbol: %s ! \n", lastEma50/lastEma20, lastEma20, lastEma50, ch.Symbol)
 		ch.trend = 1
 
 	} else if lastEma20/lastEma50 >= ch.params.TrendTrigger && ch.trend != 2 && lastLow >= lastEma50 {
-		log.Printf(aura.Sprintf(aura.BrightCyan(" up trend start, rate: %f , ema20: %f, ema50:%f, symbol: %s \n"), lastEma20/lastEma50, lastEma20, lastEma50, ch.Symbol))
+		log.Printf(" up trend start, rate: %f , ema20: %f, ema50:%f, symbol: %s \n", lastEma20/lastEma50, lastEma20, lastEma50, ch.Symbol)
 		ch.trend = 2
 	}
 }
 
-func (ch *CoinChannel) getMACD() (macd, t []float64) {
-	return rt.MACD(ch.candles, ch.Span)
+func (ch *CoinChannel) getMACD() (macd []float64, t []int64) {
+	return rt.MovingAverageConvergenceDivergence(ch.candles)
 
 }
 
-func (ch *CoinChannel) getRSI() (rsi, t []float64) {
-	return rt.RSI(ch.candles, ch.Span)
+func (ch *CoinChannel) getRSI() (rsi []float64, t []int64) {
+	return rt.RelativeStrengthIndex(ch.candles, ch.Span)
 
 }
 
-func (ch *CoinChannel) getBBand() (bband []rt.BBData) {
-	return rt.BBand(ch.candles, ch.Span)
+func (ch *CoinChannel) getBBand() (bband []rt.BollingerBandData) {
+	return rt.BollingerBand(ch.candles, ch.Span)
 
 }
 
@@ -180,5 +180,4 @@ func (ch *CoinChannel) getEMA(k float64) (ema50 []float64) {
 func ema(x, em, k float64) float64 {
 	k = 2 / (k + 1)
 	return x*k + (1-k)*em
-
 }
