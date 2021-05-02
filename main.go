@@ -1,11 +1,7 @@
 package main
 
-import (
-	st "./Strategy"
-)
+import strategy "github.com/madiazp/MakeMePoor/Strategy"
 
 func main() {
-
-	st.Simulate(200, 20, 20)
-
+	strategy.Simulate(200, 20, 20)
 }
