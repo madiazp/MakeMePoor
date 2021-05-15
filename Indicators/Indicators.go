@@ -1,4 +1,4 @@
-package Retriever
+package Indicators
 
 import (
 	bitfinexCandle "github.com/bitfinexcom/bitfinex-api-go/pkg/models/candle"

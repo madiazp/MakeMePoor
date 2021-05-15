@@ -1,4 +1,4 @@
-package Strategy
+package Engine
 
 const (
 	TRIGGER       = 1.004 // trigger rate for one candle

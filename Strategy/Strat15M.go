@@ -5,51 +5,56 @@ import (
 	"github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
 	"log"
 	"time"
+    engine "github.com/madiazp/MakeMePoor/Engine"
+
+)
+
+const (
+    SHORT = 1
+    LONG = 2
 )
 
 // Start15M : main state machine of the strategy
-func (ch *CoinChannel) Start15M() {
-	if !ch.params.IsInit {
-		ch.params.Init()
-	}
+func Start15M(ch *engine.CoinChannel) {
+    ch.InitParams()
 	log.Println("Scan starting")
 	savedfreq := ch.Freq // hold the freq
 	detect := false
 	var spike uint
 	for {
-		err := ch.scan(common.FifteenMinutes) // use 15 min candles
+		err := ch.Scan(common.FifteenMinutes) // use 15 min candles
 		if err != nil {
 			ch.Fail = err
 		}
 		// if trending stop everything
-		if ch.trend != 0 {
-			ch.status = 3
+		if ch.IsTrend() {
+			ch.SetStatus(3)
 		}
 
-		switch ch.status {
+		switch ch.Status() {
 		// first state, look up for spike out of the bollinger bands
 		case 0:
-			spike, detect = ch.isSpike(detect)
+			spike, detect = isSpike(ch, detect)
 			if spike != 0 {
-				ch.status = 1
+				ch.SetStatus(1)
 				ch.Freq = 30
 			}
 		// if a spike is found then make an order and hold a position
 		case 1:
-			spike, detect = ch.isSpike(detect)
-			target := ch.searchTarget(spike)
-			ch.sendOrder(target)
+			spike, detect = isSpike(ch, detect)
+			target := searchTarget(ch, spike)
+			ch.SendOrder(target)
 		// wait for the price to reach the target and then reset
 		case 2:
 			ch.Freq = savedfreq
-			if ch.waitClose() {
-				ch.status = 0
+			if waitClose(ch) {
+				ch.SetStatus(0)
 			}
 		// if the price is trending, liquidate every position and wait to stop trending
 		case 3:
 			ch.Freq = savedfreq
-			if ch.target.Active {
-				ch.liquidateOrders()
+			if ch.TargetReached() {
+				liquidateOrders(ch)
 			}
 
 		}
@@ -60,8 +65,8 @@ func (ch *CoinChannel) Start15M() {
 }
 
 // search if there is a spike in the price above(or below) a factor (the trigger) of the bollinger band
-func (ch *CoinChannel) isSpike(detectin bool) (spike uint, detect bool) {
-	bbands := ch.getBBand()
+func isSpike(ch *engine.CoinChannel, detectin bool) (spike uint, detect bool) {
+	bbands := ch.GetBBand()
 	bband := bbands[len(bbands)-1]
 	pastband := bbands[len(bbands)-2]
 	// see if the last price is over the trigger
@@ -74,23 +79,23 @@ func (ch *CoinChannel) isSpike(detectin bool) (spike uint, detect bool) {
 	detect = false
 	if over > 1 || below > 1 {
 		if !detectin {
-			log.Printf("Off band! p: %f, d: %f, u:%f, diff :%f , p/u : %f, d/p: %f \n", bband.Price, bband.Lower, bband.Upper, ch.bbandDelta(), over, below)
+			log.Printf("Off band! p: %f, d: %f, u:%f, diff :%f , p/u : %f, d/p: %f \n", bband.Price, bband.Lower, bband.Upper, ch.BbandDelta(), over, below)
 		}
 		detect = true
 	}
 
-	if over > ch.params.Trigger || over+pover > ch.params.SecondTrigger {
+	if over > ch.Params.Trigger || over+pover > ch.Params.SecondTrigger {
 		spike = 1
-		if over+pover > ch.params.SecondTrigger {
+		if over+pover > ch.Params.SecondTrigger {
 			spike = 2
 		}
 		log.Printf("Spike! price: %f , bband: %f , short it! \n", bband.Price, bband.Upper)
 
 		return spike, detect
 
-	} else if below > ch.params.Trigger || below+pbelow > ch.params.SecondTrigger {
+	} else if below > ch.Params.Trigger || below+pbelow > ch.Params.SecondTrigger {
 		spike = 3
-		if below+pbelow > ch.params.SecondTrigger {
+		if below+pbelow > ch.Params.SecondTrigger {
 			spike = 4
 		}
 		log.Printf("Spike! price: %f , bband: %f , long it! \n", bband.Price, bband.Lower)
@@ -101,77 +106,80 @@ func (ch *CoinChannel) isSpike(detectin bool) (spike uint, detect bool) {
 
 }
 
-func (ch *CoinChannel) searchTarget(spike uint) Target {
+func searchTarget(ch *engine.CoinChannel, spike uint) engine.Target {
 	var out float64
 	var otype uint
+    channelCandles := ch.Candles()
 	switch spike {
 	// if the last candle spike down alone set the target to the lower price of the 3rd last candle
 	case 1:
-		out = ch.candles[len(ch.candles)-3].Low
+		out = channelCandles[len(channelCandles)-3].Low
 		otype = 1
 		// if 2 consecutives candles spike down  set the target to the lower price of the 4th last candle
 	case 2:
-		out = ch.candles[len(ch.candles)-4].Low
+		out = channelCandles[len(channelCandles)-4].Low
 		otype = 1
 		// if the last candle spike up alone set the target to the higher price of the 3rd last candle
 	case 3:
-		out = ch.candles[len(ch.candles)-3].High
+		out = channelCandles[len(channelCandles)-3].High
 		otype = 2
 		// if 2 consecutives candles spike up  set the target to the higher price of the 4th last candle
 	case 4:
-		out = ch.candles[len(ch.candles)-4].High
+		out = channelCandles[len(channelCandles)-4].High
 		otype = 2
 
 	}
 
-	return Target{
-		Start:  ch.candles[len(ch.candles)-1].Close,
+	return engine.Target{
+		Start:  channelCandles[len(channelCandles)-1].Close,
 		Out:    out,
 		Type:   otype,
-		MTS:    float64(ch.candles[len(ch.candles)-1].MTS),
+		MTS:    float64(channelCandles[len(channelCandles)-1].MTS),
 		Active: true,
 	}
 
 }
 
 // wait for the price to reach the target or enter in a terminate condition
-func (ch *CoinChannel) waitClose() bool {
-	last := ch.candles[len(ch.candles)-1].Close
+func waitClose(ch *engine.CoinChannel) bool {
+    channelCandles := ch.Candles()
+	last := channelCandles[len(channelCandles)-1].Close
+    targetOut := ch.TargetOut()
+    targetStart := ch.TargetStart()
 	var profit float64
 	// if short
-	if ch.target.Type == 1 {
+	if ch.IsTarget(SHORT) {
 		// reach the target
-		if ch.target.Out >= last {
-			profit = ch.target.Start * 0.998 / last
-			ch.funds = ch.funds * profit
-			log.Printf("Short order closed, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
-			ch.target = Target{}
+		if targetOut >= last {
+            profit = targetStart * 0.998 / last
+            ch.UpdateFunds(profit)
+			log.Printf("Short order closed, start: %f, out: %f, profit: %f , acum: %f ", targetStart, last, profit, ch.Funds())
+			ch.ResetTarget()
 			return true
 			// reach the stop loss or cross 3 times the ema50
-		} else if last/ch.target.Start >= ch.params.Stop || ch.eMAStop() {
-			profit = ch.target.Start * 0.998 / last
-			ch.funds = ch.funds * profit
-			log.Printf("Orden Short liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
-			ch.target = Target{}
+		} else if last/targetStart >= ch.Params.Stop || eMAStop(ch) {
+			profit = targetStart * 0.998 / last
+            ch.UpdateFunds(profit)
+			log.Printf("Orden Short liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", targetStart, last, profit, ch.Funds())
+			ch.ResetTarget()
 			return true
 
 		}
 		//if long
-	} else if ch.target.Type == 2 {
+	} else if ch.IsTarget(LONG) {
 		// reach the target
-		if last >= ch.target.Out {
-			profit = last / ch.target.Start * 0.998
-			ch.funds = ch.funds * profit
-			log.Printf("Orden Long cerrada, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
-			ch.target = Target{}
+		if last >= targetOut {
+			profit = last / targetStart * 0.998
+            ch.UpdateFunds(profit)
+			log.Printf("Orden Long cerrada, start: %f, out: %f, profit: %f , acum: %f ", targetStart, last, profit, ch.Funds())
+			ch.ResetTarget()
 			return true
 			// reach the stop loss or cross 3 times the ema50
-		} else if ch.target.Start/last >= ch.params.Stop || ch.eMAStop() {
-			profit = last / ch.target.Start * 0.998
-			ch.funds = ch.funds * profit
-
-			log.Printf("Orden Long liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
-			ch.target = Target{}
+		} else if targetStart/last >= ch.Params.Stop || eMAStop(ch) {
+			profit = last / targetStart * 0.998
+            ch.UpdateFunds(profit)
+			log.Printf("Orden Long liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", targetStart, last, profit, ch.Funds())
+			ch.ResetTarget()
 			return true
 
 		}
@@ -180,42 +188,44 @@ func (ch *CoinChannel) waitClose() bool {
 }
 
 // liquidate the order
-func (ch *CoinChannel) liquidateOrders() {
-	last := ch.candles[len(ch.candles)-1].Close
-	profit := ch.target.Start * 0.998 / last
+func liquidateOrders(ch *engine.CoinChannel) {
+    channelCandles := ch.Candles()
+	last := channelCandles[len(channelCandles)-1].Close
+    targetStart := ch.TargetStart()
+	profit := targetStart * 0.998 / last
 
-	if ch.target.Type == 2 {
+	if ch.IsTarget(LONG) {
 		profit = 1 / profit
 	}
-	ch.funds = ch.funds * profit
-	log.Printf("Orden liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", ch.target.Start, last, profit, ch.funds)
-	ch.target = Target{}
+	ch.AddFunds(profit)
+	log.Printf("Orden liquidada!!, start: %f, out: %f, profit: %f , acum: %f ", targetStart, last, profit, ch.Funds())
+	ch.ResetTarget()
 
 }
 
 // First stop, if the price cross the ema 50 three times and gets far from the target price the position is closed.
-func (ch *CoinChannel) eMAStop() bool {
+func eMAStop(ch *engine.CoinChannel) bool {
 	// get the ema 50
-	ema50 := ch.getEMA(50)
-
+	ema50 := ch.GetEMA(50)
+    channelCandles := ch.Candles()
 	var crossing, inv int
 	var far bool
 
-	for i, _ := range ch.candles {
-		inv = len(ch.candles) - i - 1 // count from the last candle and below
+	for i, _ := range channelCandles {
+		inv = len(channelCandles) - i - 1 // count from the last candle and below
 		// if the candle reach the enter position  the loop stop
-		if float64(ch.candles[inv].MTS) == ch.target.MTS {
+		if ch.TargetMTSIsMet(float64(channelCandles[inv].MTS)) {
 			break
 		}
 		// count the ema50 crossings
-		if emaCross(ch.candles[inv], ch.candles[inv-1], ema50[inv]) {
+		if emaCross(channelCandles[inv], channelCandles[inv-1], ema50[inv]) {
 			crossing++
 		}
 	}
 	// see the last price
-	last := ch.candles[len(ch.candles)-1]
+	last := channelCandles[len(channelCandles)-1]
 	far = ema50[len(ema50)-1] >= last.Close // long position condition for far price
-	if ch.target.Type == 2 {
+	if ch.IsTarget(LONG) {
 		far = !far // short position condition for far price
 	}
 	return far && crossing >= 3
