@@ -1,4 +1,4 @@
-package Strategy
+package Engine
 
 type Params struct {
     Trigger       float64
