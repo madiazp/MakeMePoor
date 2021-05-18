@@ -211,7 +211,7 @@ func eMAStop(ch *engine.CoinChannel) bool {
 	var crossing, inv int
 	var far bool
 
-	for i, _ := range channelCandles {
+	for i := range channelCandles {
 		inv = len(channelCandles) - i - 1 // count from the last candle and below
 		// if the candle reach the enter position  the loop stop
 		if ch.TargetMTSIsMet(float64(channelCandles[inv].MTS)) {
