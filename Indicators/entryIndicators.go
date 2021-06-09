@@ -10,6 +10,7 @@ type BollingerBandData struct {
 	Low       float64
 	Mid       float64
 	Price     float64
+	LastClose float64
 	Central   float64
 	Upper     float64
 	Lower     float64
@@ -20,30 +21,32 @@ type BollingerBandData struct {
 // (see more on the wiki https://github.com/madiazp/MakeMePoor/wiki).
 // Apparently a set of candles is called a Snapshot, but bitfinex api docs are ass.
 // TODO: evaluate whether or not to use Snapshot instead of Slice
-func BollingerBand(candles []*bitfinexCandle.Candle, span int) (bollingerBand []BollingerBandData) {
+func BollingerBand(candles []*bitfinexCandle.Candle, span int, sensitivity float64) (bollingerBand BollingerBandData) {
 	var mean, std float64
 	var data []float64
 
-	for i, candle := range candles {
+	for _, candle := range candles {
 		data = append(data, candle.Close)
 		// wait for enough data
-		if i > span {
-
-			mean, std = stat.MeanStdDev(data[i-span:i], nil)
-			bollingerBand = append(bollingerBand, BollingerBandData{
-				High:      candle.High,
-				Low:       candle.Low,
-				Mid:       (candle.High + candle.Low) / 2,
-				Price:     data[i],
-				Central:   mean,
-				Upper:     mean + 2*std,
-				Lower:     mean - 2*std,
-				Timestamp: candle.MTS,
-			})
-
-		}
 	}
-	return bollingerBand
+	dataLen := len(data) - 1
+	candleLen := len(candles) - 1
+	init := dataLen - span
+	if init < 0 {
+		init = 0
+	}
+	mean, std = stat.MeanStdDev(data[init:dataLen], nil)
+	return BollingerBandData{
+		High:      candles[candleLen].High,
+		Low:       candles[candleLen].Low,
+		Mid:       (candles[candleLen].High + candles[candleLen].Low) / 2,
+		Price:     data[dataLen],
+		LastClose: data[dataLen-1],
+		Central:   mean,
+		Upper:     mean + sensitivity*std,
+		Lower:     mean - sensitivity*std,
+		Timestamp: candles[candleLen].MTS,
+	}
 }
 
 // RelativeStrengthIndex computes this indicator from a set of candles.
@@ -81,24 +84,36 @@ func RelativeStrengthIndex(candles []*bitfinexCandle.Candle, span int) (rsiValue
 
 // MovingAverageConvergenceDivergence computes this indicator from a set of candles.
 // Entry not yet on the wiki.
-func MovingAverageConvergenceDivergence(candles []*bitfinexCandle.Candle) (macdHistogram []float64,
+func MovingAverageConvergenceDivergence(candles []*bitfinexCandle.Candle) (macd float64, macdHistogram []float64,
 	timestamps []int64) {
 
 	longTermEMA := candles[0].Close
 	shortTermEMA := candles[0].Close
-	var signal, macd float64
+	var signal float64
 
 	for _, candle := range candles[1:] {
 		timestamps = append(timestamps, candle.MTS)
 
-		longTermEMA = ema(candle.Close, longTermEMA, 26)
-		shortTermEMA = ema(candle.Close, shortTermEMA, 12)
+		longTermEMA = Ema(candle.Close, longTermEMA, 26)
+		shortTermEMA = Ema(candle.Close, shortTermEMA, 12)
 		macd = shortTermEMA - longTermEMA
 
-		signal = ema(macd, signal, 9)
+		signal = Ema(macd, signal, 9)
 		macdHistogram = append(macdHistogram, macd-signal)
 	}
-	return macdHistogram, timestamps
+	return macd, macdHistogram, timestamps
+}
+
+// watch out for trending
+
+func GetEMA(candles []*bitfinexCandle.Candle, k int) (ema50 []float64) {
+	ema50 = append(ema50, candles[0].Close)
+	for i, cdls := range candles {
+		if i > 0 {
+			ema50 = append(ema50, Ema(cdls.Close, ema50[i-1], k))
+		}
+	}
+	return ema50
 }
 
 // smma computes the smoothed moving average from the previous value and the upward/downward variation.
@@ -107,7 +122,7 @@ func smma(previousSMMA, variation float64, periods int) float64 {
 }
 
 // ema computes the exponential moving average from the candle close and the previous value.
-func ema(closeValue, previousEMA float64, periods int) float64 {
+func Ema(closeValue, previousEMA float64, periods int) float64 {
 	alpha := 2 / float64(periods+1)
 	return alpha*closeValue + (1-alpha)*previousEMA
 }

@@ -1,10 +1,11 @@
 package Comms
 
-import(
-	bitfinexCommon "github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
+import (
+	"time"
+
 	bitfinexCandle "github.com/bitfinexcom/bitfinex-api-go/pkg/models/candle"
+	bitfinexCommon "github.com/bitfinexcom/bitfinex-api-go/pkg/models/common"
 	"github.com/bitfinexcom/bitfinex-api-go/v2/rest"
-    "time"
 )
 
 func Scan(TimeFrame bitfinexCommon.CandleResolution, ticket string) ([]*bitfinexCandle.Candle, error) {
