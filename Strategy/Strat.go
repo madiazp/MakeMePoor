@@ -106,10 +106,16 @@ func Start(ch *engine.CoinChannel) {
 		utils.Error(errFast.Error())
 	}
 	trend := trendScan(slowCandles, fastCandles)
-	ch.Scan(tFrame.Main)
+	errScan := ch.Scan(tFrame.Main)
+	if errScan != nil {
+		utils.Error(errScan.Error())
+	}
 	innerStatus.setInerStatus(ch.Candles(), trend)
 	for {
-		ch.Scan(tFrame.Main)
+		errScan = ch.Scan(tFrame.Main)
+		if errScan != nil {
+			utils.Error(errScan.Error())
+		}
 		machine(ch, trend, innerStatus)
 		slowCandles, errSlow = comms.Scan(tFrame.Slow, ch.Symbol)
 		if errSlow != nil {
