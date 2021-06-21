@@ -14,7 +14,10 @@ func CloseOrder() {
 
 func CloseOrderSimulation(symbol string, price, open, funds float64, trend int) float64 {
 	factor := price / open
+	if trend == utils.DOWN {
+		factor = 1 / factor
+	}
 	newFunds := funds * factor
-	utils.CloseAlert(symbol, price, open, newFunds, trend)
+	utils.CloseAlert(symbol, newFunds-funds, price, open, newFunds, trend)
 	return factor
 }

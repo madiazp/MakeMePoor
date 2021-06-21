@@ -34,15 +34,14 @@ func EnterAlert(symbol string, price, target, stoploss float64, trend int) {
 	logger(yellow("[Activity]"), fmt.Sprintf("Open %s position %s: price: %s, target: %f, stop loss: %f", trendStr, symbol, green(price), target, stoploss))
 }
 
-func CloseAlert(symbol string, price, open, funds float64, trend int) {
+func CloseAlert(symbol string, gain, price, open, funds float64, trend int) {
 	trendStr := "SHORT"
 	if trend == UP {
 		trendStr = "LONG"
 	}
-	gain := price - open
 	var gainStr string
 	if gain > 0 {
-		gainStr = green(gain)
+		gainStr = cyan(gain)
 	} else {
 		gainStr = red(gain)
 	}
@@ -63,6 +62,9 @@ func Error(msg string) {
 
 func Activity(s string) {
 	logger(yellow("[Activity]"), s)
+}
+func Debug(s string) {
+	logger("[Debug]", s)
 }
 
 func Bootstrap(symbol string, funds float64, simulator bool) {

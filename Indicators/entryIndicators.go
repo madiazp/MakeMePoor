@@ -24,28 +24,21 @@ type BollingerBandData struct {
 func BollingerBand(candles []*bitfinexCandle.Candle, span int, sensitivity float64) (bollingerBand BollingerBandData) {
 	var mean, std float64
 	var data []float64
-
 	for _, candle := range candles {
 		data = append(data, candle.Close)
 		// wait for enough data
 	}
-	dataLen := len(data) - 1
-	candleLen := len(candles) - 1
-	init := dataLen - span
-	if init < 0 {
-		init = 0
-	}
-	mean, std = stat.MeanStdDev(data[init:dataLen], nil)
+	mean, std = stat.MeanStdDev(data[0:span], nil)
 	return BollingerBandData{
-		High:      candles[candleLen].High,
-		Low:       candles[candleLen].Low,
-		Mid:       (candles[candleLen].High + candles[candleLen].Low) / 2,
-		Price:     data[dataLen],
-		LastClose: data[dataLen-1],
+		High:      candles[0].High,
+		Low:       candles[0].Low,
+		Mid:       (candles[0].High + candles[0].Low) / 2,
+		Price:     data[0],
+		LastClose: data[1],
 		Central:   mean,
 		Upper:     mean + sensitivity*std,
 		Lower:     mean - sensitivity*std,
-		Timestamp: candles[candleLen].MTS,
+		Timestamp: candles[0].MTS,
 	}
 }
 

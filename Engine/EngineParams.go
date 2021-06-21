@@ -6,8 +6,8 @@ type Params struct {
 	TrendTrigger  float64
 	Stop          float64
 	Fees          float64
-	AtrStop       int
-	AtrTarget     int
+	AtrStop       float64
+	AtrTarget     float64
 	IsInit        bool
 	Divergence    bool
 }

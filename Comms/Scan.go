@@ -25,7 +25,7 @@ func Scan(TimeFrame bitfinexCommon.CandleResolution, ticket string) ([]*bitfinex
 		start,
 		end,
 		1000,
-		bitfinexCommon.OldestFirst,
+		bitfinexCommon.NewestFirst,
 	)
 	if err != nil {
 

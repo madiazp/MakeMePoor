@@ -26,7 +26,7 @@ func (t *timeFrames) setTimesFrame(main uint) {
 		panic("time drame not supported")
 	}
 	t.Main = globalTimeFrames[main]
-	t.Slow = globalTimeFrames[main+3]
+	t.Slow = globalTimeFrames[main+2]
 	t.Fast = globalTimeFrames[main+1]
 }
 
@@ -76,18 +76,18 @@ func trendScan(slowCandles, fastCandles []*bitfinexCandle.Candle) (ans int) {
 
 }
 
-func targetSet(candles []*bitfinexCandle.Candle, trend, stopFactor, targetFactor int) (target engine.Target) {
+func targetSet(candles []*bitfinexCandle.Candle, trend int, stopFactor, targetFactor float64) (target engine.Target) {
 	atr := indicator.AvarageTrueRange(candles)
 	if trend == utils.DOWN {
 		atr = -atr
 	}
-	lastCandle := candles[len(candles)-1]
+	lastCandle := candles[1]
 	return engine.Target{
 		Start:  lastCandle.Close,
-		Out:    lastCandle.Close + atr*float64(targetFactor),
+		Out:    lastCandle.Close + atr*targetFactor,
 		Type:   trend,
 		MTS:    float64(lastCandle.MTS),
-		Stop:   lastCandle.Close - atr*float64(stopFactor),
+		Stop:   lastCandle.Close - atr*stopFactor,
 		Active: true,
 	}
 }
@@ -115,16 +115,20 @@ func Start(ch *engine.CoinChannel) {
 		errScan = ch.Scan(tFrame.Main)
 		if errScan != nil {
 			utils.Error(errScan.Error())
+			continue
 		}
 		machine(ch, trend, innerStatus)
 		slowCandles, errSlow = comms.Scan(tFrame.Slow, ch.Symbol)
 		if errSlow != nil {
 			utils.Error(errSlow.Error())
+			continue
 		}
 		fastCandles, errFast = comms.Scan(tFrame.Fast, ch.Symbol)
 		if errFast != nil {
 			utils.Error(errFast.Error())
+			continue
 		}
+
 		trend = trendScan(slowCandles, fastCandles)
 		time.Sleep(time.Duration(ch.Freq) * time.Second)
 	}
@@ -135,13 +139,14 @@ func machine(ch *engine.CoinChannel, trend int, innerStatus *InnerStatus) {
 	bband := indicator.BollingerBand(candles, 10, 1.5)
 	switch ch.Status() {
 	case 0:
+		// utils.Debug(fmt.Sprintf("BBAND price: %f, high band: %f, low band: %f, trend: %v", bband.Price, bband.Upper, bband.Lower, trend))
 		if trend == utils.DOWN {
-			if bband.Price > bband.High {
+			if bband.Price > bband.Upper {
 				utils.SpikeAlert(ch.Symbol, bband.Price, innerStatus.MACD, innerStatus.Close, trend)
 				ch.SetStatus(1)
 			}
 		} else {
-			if bband.Price < bband.Low {
+			if bband.Price < bband.Lower {
 				utils.SpikeAlert(ch.Symbol, bband.Price, innerStatus.MACD, innerStatus.Close, trend)
 				ch.SetStatus(1)
 			}
@@ -152,7 +157,7 @@ func machine(ch *engine.CoinChannel, trend int, innerStatus *InnerStatus) {
 			ch.SetStatus(0)
 			break
 		}
-		if ((trend == utils.DOWN && bband.LastClose < bband.High) || (trend == utils.UP && bband.LastClose > bband.Low)) && // close spike condition
+		if ((trend == utils.DOWN && bband.LastClose < bband.Upper) || (trend == utils.UP && bband.LastClose > bband.Lower)) && // close spike condition
 			((ch.Params.Divergence && innerStatus.isDivergence(candles, trend)) || !ch.Params.Divergence) { // divergence condition
 			ch.SetTarget(targetSet(candles, trend, ch.Params.AtrStop, ch.Params.AtrTarget))
 			ch.SetStatus(2)
